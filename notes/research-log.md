@@ -90,6 +90,38 @@ ReLU 让多层网络不再等价于单条直线，因此能拟合非线性函数
 ### 下一步
 学习分类任务：模型输出类别分数、Softmax 和交叉熵。
 
+## 第一周总结：张量、梯度、回归与分类
+
+## 1. 张量形状
+
+- `(m, n)` 表示一个有 `m` 行、`n` 列的二维张量；通常可理解为 `m` 个样本，每个样本有 `n` 个特征。
+- 矩阵乘法 `(m, n) @ (n, p)` 的结果形状是 `(m, p)`：左矩阵的列数必须等于右矩阵的行数。
+- 实际例子：Day 6 的全部数据 `X` 形状是 `(400, 2)`，即 400 个样本、每个样本有 2 个特征；模型输出 logits 的形状是 `(400, 2)`，即每个样本对两个类别各有一个原始分数。
+
+## 2. 梯度与训练
+
+- 梯度表示：当模型参数发生极小变化时，损失会如何变化；它指出让损失上升最快的方向，优化时向反方向更新参数。
+- `loss.backward()` 做：从损失开始反向传播，计算模型所有可训练参数的梯度，并存到对应参数的 `.grad` 中。
+- `optimizer.step()` 做：读取各参数的梯度，按优化器规则和学习率更新参数，使下一次预测的损失倾向于更小。
+
+## 3. 回归
+
+- 回归预测的是连续数值，例如房价、温度，或 Day 4 中由 `y = 3x + 2 + noise` 产生的连续标签。
+- Day 4 的线性回归中，模型的权重应接近 3，偏置应接近 2；损失曲线总体下降说明模型从数据中学到了该关系。
+
+## 4. 分类
+
+- logits 是模型为每个类别输出的原始分数，不是概率；数值越大，模型越倾向该类别。
+- `argmax(logits, dim=1)` 对每个样本的类别维度取最大 logit 的位置，并把该位置作为预测类别。
+- loss 与 accuracy 的区别：accuracy 只统计预测类别是否正确；交叉熵 loss 还衡量模型对真实类别的置信程度。即使准确率相同，过度自信地预测错误会产生更高 loss。
+
+## 5. 三个仍有疑问的问题
+
+1. 为什么学习率过大可能导致训练不收敛，而过小又会导致训练很慢？
+2. softmax 如何把 logits 转成概率，为什么计算时需要关注数值稳定性？
+3. 当训练集准确率很高、测试集准确率很低时，如何判断和缓解过拟合？
+
+
 ## Day 8：MLP 与非线性分类
 
 MLP 使用 `Linear → ReLU → Linear`。ReLU 为模型加入非线性，使其可以学习圆形等弯曲分类边界。
@@ -115,3 +147,139 @@ SGD 的学习率 0.001 过小，200 个 epoch 后仍未充分学习；增大到 
 输入 shape 为 `[128, 1, 28, 28]`。两次卷积和池化后变为 `[128, 32, 7, 7]`，展平为 `[128, 1568]`，最终输出 `[128, 10]` 个类别 logits。
 
 训练 loss 从 0.6112 降至 0.2788，测试准确率从 84.70% 提升至 89.03%。卷积层通过局部连接和参数共享提取图像特征；池化层压缩特征图并降低对精确位置的依赖。
+
+## Day 10–12 必须掌握的新代码
+## Day 10：优化器与学习率实验
+1. SGD 与 Adam
+optimizer = optim.SGD(model.parameters(), lr=0.01)
+optimizer = optim.Adam(model.parameters(), lr=0.01)
+必须懂：
+model.parameters()：把模型中需要训练的权重和偏置交给优化器；
+lr：学习率，每次参数更新的步长；
+SGD：主要按当前梯度更新；
+Adam：利用梯度历史自动调整更新，通常收敛更快。
+2. 保持对照实验公平
+torch.manual_seed(123)
+model = build_model()
+必须懂：每组实验都重设随机种子，确保模型从相同初始权重开始。否则不同结果可能只是初始化不同，而不能说明优化器或学习率造成差异。
+3. 根据字符串选择不同优化器
+if optimizer_name == "SGD":
+    optimizer = optim.SGD(model.parameters(), lr=lr)
+else:
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+必须懂：同一训练函数可以根据传入参数执行不同实验，避免复制六遍训练代码。
+Day 11：CNN 与图像数据
+1. 自动选择 CPU / GPU
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model = SmallCNN().to(device)
+images = images.to(device)
+必须懂：
+cuda 是 NVIDIA GPU；
+没有可用 GPU 时自动使用 CPU；
+模型和数据必须在同一个设备上。
+2. Fashion-MNIST 数据集
+train_dataset = datasets.FashionMNIST(
+    root=data_dir,
+    train=True,
+    download=True,
+    transform=transform,
+)
+必须懂：
+train=True：训练集；
+train=False：测试集；
+download=True：第一次自动下载；
+transform=transforms.ToTensor()：把图片转成 PyTorch Tensor。
+3. DataLoader：分批读取数据
+train_loader = DataLoader(
+    train_dataset,
+    batch_size=128,
+    shuffle=True,
+    num_workers=0,
+)
+必须懂：
+batch_size=128：一次训练 128 张图；
+shuffle=True：每轮训练都打乱训练集；
+测试集通常 shuffle=False；
+num_workers=0：Windows 下安全地在主进程读取数据。
+4. 二维卷积层
+nn.Conv2d(1, 16, kernel_size=3, padding=1)
+必须懂：
+1：输入通道数，灰度图是 1
+16：输出 16 张特征图
+3：卷积核大小是 3×3
+padding=1：补边，使高宽不缩小
+5. 最大池化
+nn.MaxPool2d(2)
+必须懂：每个 2×2 区域只保留最大值，使特征图高宽减半。
+28×28 → 14×14
+14×14 → 7×7
+6. 自定义 CNN 类
+class SmallCNN(nn.Module):
+    def __init__(self):
+        super().__init__()
+必须懂：
+nn.Module：所有 PyTorch 模型的基础类；
+__init__：定义网络层；
+forward()：定义数据经过网络的路径；
+super().__init__()：初始化父类，让 PyTorch 能登记和训练这些层。
+7. 展平
+nn.Flatten()
+nn.Linear(32 * 7 * 7, 64)
+必须懂：卷积后的 shape 是 [batch, 32, 7, 7]，全连接层只能接收一维特征，因此将每张图展平为 32×7×7=1568 个数字。
+Day 12：测试、错分样本与混淆矩阵
+1. 测试模式与关闭梯度
+model.eval()
+
+with torch.no_grad():
+    logits = model(images)
+必须懂：
+model.eval()：切到测试模式；
+torch.no_grad()：测试不需要梯度，节省内存和计算；
+训练时使用 model.train()，测试时使用 model.eval()。
+2. 把多个 batch 拼成完整测试结果
+all_images.append(images)
+all_true_labels.append(labels)
+all_pred_labels.append(predictions)
+
+all_images = torch.cat(all_images)
+all_true_labels = torch.cat(all_true_labels)
+all_pred_labels = torch.cat(all_pred_labels)
+必须懂：测试集被分批处理；先把每批结果存入列表，再用 torch.cat() 拼起来，才能对全部 10000 张测试图片做统一分析。
+3. 计算总体准确率
+accuracy = (all_true_labels == all_pred_labels).float().mean().item()
+必须懂：
+真实标签 == 预测标签
+→ 得到 True/False
+→ float() 转为 1/0
+→ mean() 得到正确比例
+→ item() 转成普通数字
+4. 创建混淆矩阵
+confusion_matrix = torch.zeros(10, 10, dtype=torch.int64)
+
+for true_label, pred_label in zip(all_true_labels, all_pred_labels):
+    confusion_matrix[true_label, pred_label] += 1
+必须懂：
+行 = 真实类别
+列 = 预测类别
+例如：
+confusion_matrix[6, 0] += 1
+表示一个真实 Shirt（6）被误判为 T-shirt/top（0）。
+5. 找到所有错分图片
+wrong_indices = torch.where(all_true_labels != all_pred_labels)[0]
+必须懂：
+真实标签 != 预测标签
+→ 得到所有预测错误的位置
+wrong_indices 中每个数字都对应一张被模型预测错的测试图片。
+6. 从 Tensor 取单个值
+true_label = all_true_labels[image_index].item()
+必须懂：.item() 将只含一个数的 Tensor 变成普通 Python 整数，方便用作类别名称列表的索引。
+
+## Day 12：CNN 错误分析
+
+小型 CNN 在 Fashion-MNIST 测试集上达到 89.46% 准确率，共错分 1054 张图片。
+
+混淆矩阵显示，错误主要集中在上装类别：真实 Shirt 被预测为 T-shirt/top 的次数最多（128 次），也常被预测为 Coat（100 次）和 Pullover（86 次）。真实 Pullover 也常被预测为 Coat（97 次）。
+
+错分图片表明，28×28 灰度图缺少颜色与细粒度纹理信息，导致模型难以区分领口、袖型和衣襟等细节。鞋类中 Ankle boot 与 Sneaker 也存在一定混淆。
+
+假设：将卷积通道数从 16/32 增加为 32/64，可让模型学习更多视觉特征，从而降低上装类别之间的混淆。下一步只改变卷积通道数，其他训练条件保持不变，验证该假设。
